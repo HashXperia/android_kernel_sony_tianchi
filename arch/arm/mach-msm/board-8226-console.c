@@ -12,6 +12,7 @@
 #include <linux/console.h>
 #include <linux/string.h>
 #include <asm/setup.h>
+#include <ram_console.h>
 
 #define CONSOLE_NAME "ttyHSL"
 #define CONSOLE_IX 0
@@ -33,3 +34,26 @@ static int __init setup_serial_console(char *console_flag)
 * enable flag will be passed as Kernel boot arg with tag babe09A9.
 */
 __setup("oemandroidboot.babe09a9=", setup_serial_console);
+
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+static char bootreason[128];
+
+int __init msm_boot_reason(char *s)
+{
+	int n;
+
+	if (*s == '=')
+		s++;
+	n = snprintf(bootreason, sizeof(bootreason),
+		 "Boot info:\n"
+		 "Last boot reason: %s\n", s);
+	bootreason[n] = '\0';
+	return 1;
+}
+__setup("bootreason", msm_boot_reason);
+
+struct ram_console_platform_data ram_console_pdata = {
+	.bootinfo = bootreason,
+};
+#endif
+

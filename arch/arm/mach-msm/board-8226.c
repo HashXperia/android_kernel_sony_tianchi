@@ -24,12 +24,15 @@
 #include <linux/of_fdt.h>
 #include <linux/of_irq.h>
 #include <linux/memory.h>
+#include <linux/memblock.h>
 #include <linux/regulator/qpnp-regulator.h>
 #include <linux/msm_tsens.h>
 #include <asm/mach/map.h>
+#include <linux/persistent_ram.h>
 #include <asm/hardware/gic.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
+#include <asm/setup.h>
 #include <mach/board.h>
 #include <mach/gpiomux.h>
 #include <mach/msm_iomap.h>
@@ -45,6 +48,7 @@
 #include <mach/rpm-smd.h>
 #include <mach/rpm-regulator-smd.h>
 #include <mach/msm_smem.h>
+#include <mach/msm_memory_dump.h>
 #include <linux/msm_thermal.h>
 #include "board-dt.h"
 #include "clock.h"
@@ -52,6 +56,7 @@
 #include "spm.h"
 #include "pm.h"
 #include "modem_notifier.h"
+#include "board-8226-console.h"
 
 static struct memtype_reserve msm8226_reserve_table[] __initdata = {
 	[MEMTYPE_SMI] = {
@@ -87,6 +92,46 @@ static struct of_dev_auxdata msm8226_auxdata_lookup[] __initdata = {
 	{}
 };
 
+#define DEBUG_MEM_SIZE SZ_1M
+
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+#define MSM_PERSISTENT_RAM_SIZE (SZ_1M)
+#define MSM_RAM_CONSOLE_SIZE (128 * SZ_1K)
+
+static struct persistent_ram_descriptor pr_desc = {
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+	.name = "ram_console",
+	.size = MSM_RAM_CONSOLE_SIZE
+#endif
+};
+
+static struct persistent_ram msm_pram = {
+	.size = MSM_PERSISTENT_RAM_SIZE,
+	.num_descs = 1,
+	.descs = &pr_desc
+};
+
+static void reserve_persistent_ram(void)
+{
+	struct membank *mb = &meminfo.bank[meminfo.nr_banks - 1];
+	unsigned long bank_end = mb->start + mb->size;
+
+	msm_pram.start = bank_end - DEBUG_MEM_SIZE - MSM_PERSISTENT_RAM_SIZE;
+	persistent_ram_early_init(&msm_pram);
+}
+#endif
+
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+static struct platform_device ram_console_device = {
+	.name           = "ram_console",
+	.id             = -1,
+	.dev = {
+		.platform_data = &ram_console_pdata,
+	}
+};
+#endif
+
+
 static struct reserve_info msm8226_reserve_info __initdata = {
 	.memtype_reserve_table = msm8226_reserve_table,
 	.paddr_to_memtype = msm8226_paddr_to_memtype,
@@ -100,9 +145,19 @@ static void __init msm8226_early_memory(void)
 
 static void __init msm8226_reserve(void)
 {
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+        reserve_persistent_ram();
+#endif
 	reserve_info = &msm8226_reserve_info;
 	of_scan_flat_dt(dt_scan_for_memory_reserve, msm8226_reserve_table);
 	msm_reserve();
+}
+
+void __init msm8226_add_devices(void)
+{
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+	platform_device_register(&ram_console_device);
+#endif
 }
 
 /*
@@ -139,6 +194,7 @@ void __init msm8226_init(void)
 	msm8226_init_gpiomux();
 	board_dt_populate(adata);
 	msm8226_add_drivers();
+        msm8226_add_devices();
 }
 
 static const char *msm8226_dt_match[] __initconst = {
